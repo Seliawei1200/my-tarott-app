@@ -1,0 +1,1153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 塔罗牌 - 多牌阵手势占卜</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/handpose"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Noto+Serif+SC:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Serif SC', serif;
+            background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+            overflow-x: hidden;
+        }
+        
+        .tarot-font {
+            font-family: 'Cinzel', serif;
+        }
+        
+        .mystical-glow {
+            box-shadow: 0 0 30px rgba(233, 196, 106, 0.3), 
+                        inset 0 0 30px rgba(233, 196, 106, 0.1);
+        }
+        
+        .card-back {
+            background: linear-gradient(135deg, #1a1a2e 0%, #0f0f1e 100%);
+            border: 2px solid #e9c46a;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .card-back::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: 
+                radial-gradient(circle at 30% 30%, rgba(233,196,106,0.2) 0%, transparent 50%),
+                radial-gradient(circle at 70% 70%, rgba(233,196,106,0.1) 0%, transparent 50%);
+        }
+        
+        .card-back::after {
+            content: '☆';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 2.5rem;
+            color: #e9c46a;
+            opacity: 0.8;
+            text-shadow: 0 0 20px rgba(233,196,106,0.8);
+        }
+        
+        .card-face {
+            background: linear-gradient(135deg, #faf8f3 0%, #f0ebe3 100%);
+            border: 3px solid #d4af37;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        
+        .shuffling {
+            animation: shuffle 0.5s ease-in-out infinite;
+        }
+        
+        @keyframes shuffle {
+            0%, 100% { transform: translateY(0) rotate(0deg) scale(1); }
+            25% { transform: translateY(-15px) rotate(-8deg) scale(1.05); }
+            75% { transform: translateY(-15px) rotate(8deg) scale(1.05); }
+        }
+        
+        .drawing {
+            animation: draw 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        }
+        
+        @keyframes draw {
+            0% { transform: scale(0.5) translateY(-100px) rotateY(180deg); opacity: 0; }
+            50% { transform: scale(1.1) translateY(-20px) rotateY(90deg); }
+            100% { transform: scale(1) translateY(0) rotateY(0deg); opacity: 1; }
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.6s ease-out;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .card-slot {
+            transition: all 0.3s ease;
+        }
+        
+        .card-slot:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(233,196,106,0.2);
+        }
+        
+        .card-slot.occupied {
+            border-color: #e9c46a;
+            background: rgba(233,196,106,0.05);
+        }
+        
+        .spread-selector {
+            background: rgba(0,0,0,0.4);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(233,196,106,0.2);
+        }
+        
+        .spread-btn {
+            transition: all 0.3s;
+            border: 1px solid transparent;
+        }
+        
+        .spread-btn:hover {
+            border-color: rgba(233,196,106,0.5);
+            background: rgba(233,196,106,0.1);
+            transform: translateX(5px);
+        }
+        
+        .spread-btn.active {
+            background: linear-gradient(90deg, rgba(233,196,106,0.3), rgba(233,196,106,0.1));
+            border-color: #e9c46a;
+            box-shadow: 0 0 15px rgba(233,196,106,0.3);
+        }
+        
+        .star-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            background-image: 
+                radial-gradient(2px 2px at 20px 30px, rgba(255,255,255,0.8), rgba(0,0,0,0)),
+                radial-gradient(2px 2px at 40px 70px, rgba(255,255,255,0.9), rgba(0,0,0,0)),
+                radial-gradient(1px 1px at 50px 160px, rgba(255,255,255,0.7), rgba(0,0,0,0)),
+                radial-gradient(2px 2px at 90px 40px, rgba(255,255,255,0.8), rgba(0,0,0,0)),
+                radial-gradient(1px 1px at 130px 80px, rgba(255,255,255,0.9), rgba(0,0,0,0)),
+                radial-gradient(2px 2px at 160px 120px, rgba(255,255,255,0.7), rgba(0,0,0,0));
+            background-repeat: repeat;
+            background-size: 200px 200px;
+            opacity: 0.4;
+            animation: twinkle 8s ease-in-out infinite;
+        }
+        
+        @keyframes twinkle {
+            0%, 100% { opacity: 0.3; }
+            50% { opacity: 0.6; }
+        }
+        
+        #webcam {
+            transform: scaleX(-1);
+            opacity: 0.9;
+            border-radius: 12px;
+        }
+        
+        .status-pill {
+            background: linear-gradient(90deg, rgba(233,196,106,0.2), rgba(233,196,106,0.05));
+            border: 1px solid rgba(233,196,106,0.4);
+        }
+        
+        .position-label {
+            background: linear-gradient(135deg, rgba(0,0,0,0.8), rgba(0,0,0,0.6));
+            border: 1px solid rgba(233,196,106,0.3);
+            backdrop-filter: blur(4px);
+        }
+        
+        /* 凯尔特十字特殊布局 */
+        .celtic-cross-layout {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            grid-template-rows: repeat(4, 1fr);
+            gap: 10px;
+            max-width: 500px;
+            aspect-ratio: 1;
+        }
+        
+        .celtic-pos-1 { grid-column: 2; grid-row: 2; } /* 中心 */
+        .celtic-pos-2 { grid-column: 2; grid-row: 2; transform: rotate(90deg) translateX(20px); z-index: 1; } /* 横置 */
+        .celtic-pos-3 { grid-column: 2; grid-row: 1; } /* 上方 */
+        .celtic-pos-4 { grid-column: 3; grid-row: 2; } /* 右方 */
+        .celtic-pos-5 { grid-column: 2; grid-row: 3; } /* 下方 */
+        .celtic-pos-6 { grid-column: 1; grid-row: 2; } /* 左方 */
+        .celtic-pos-7 { grid-column: 4; grid-row: 4; } /* 基础 */
+        .celtic-pos-8 { grid-column: 4; grid-row: 3; } /* 过去 */
+        .celtic-pos-9 { grid-column: 4; grid-row: 2; } /* 未来 */
+        .celtic-pos-10 { grid-column: 4; grid-row: 1; } /* 结果 */
+        
+        .horseshoe-layout {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 15px;
+        }
+        
+        .horseshoe-layout .card-wrapper:nth-child(1) { transform: rotate(-15deg) translateY(20px); }
+        .horseshoe-layout .card-wrapper:nth-child(2) { transform: rotate(-10deg) translateY(10px); }
+        .horseshoe-layout .card-wrapper:nth-child(3) { transform: rotate(-5deg) translateY(5px); }
+        .hothic-layout .card-wrapper:nth-child(4) { transform: rotate(0deg); }
+        .horseshoe-layout .card-wrapper:nth-child(5) { transform: rotate(5deg) translateY(5px); }
+        .horseshoe-layout .card-wrapper:nth-child(6) { transform: rotate(10deg) translateY(10px); }
+        .horseshoe-layout .card-wrapper:nth-child(7) { transform: rotate(15deg) translateY(20px); }
+        
+        .pyramid-layout {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+        
+        .pyramid-row {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+        }
+    </style>
+</head>
+<body class="min-h-screen text-gray-100 relative">
+    <div class="star-bg"></div>
+    
+    <!-- 头部 -->
+    <header class="relative z-10 text-center py-6">
+        <h1 class="tarot-font text-4xl md:text-5xl text-yellow-400 mb-2 tracking-wider mystical-glow p-4 rounded-lg inline-block bg-black/20">
+            🔮 Mystic Tarot Pro
+        </h1>
+        <p class="text-gray-300 text-lg">AI 手势识别 · 十大经典牌阵</p>
+    </header>
+
+    <!-- 主容器 -->
+    <main class="container mx-auto px-4 pb-12 relative z-10 max-w-7xl">
+        
+        <!-- 控制栏 -->
+        <div class="flex flex-wrap justify-center gap-3 mb-6">
+            <div id="modelStatus" class="status-pill px-4 py-2 rounded-full text-sm flex items-center gap-2">
+                <span class="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></span>
+                正在加载 AI 模型...
+            </div>
+            <div id="gestureStatus" class="status-pill px-4 py-2 rounded-full text-sm hidden">
+                等待手势...
+            </div>
+            <div id="currentSpread" class="status-pill px-4 py-2 rounded-full text-sm bg-purple-900/50 border-purple-500/50">
+                当前牌阵：单张牌占卜
+            </div>
+        </div>
+
+        <div class="grid xl:grid-cols-12 gap-6 items-start">
+            
+            <!-- 左侧：摄像头和牌阵选择 (4列) -->
+            <div class="xl:col-span-4 space-y-4">
+                <!-- 摄像头区域 -->
+                <div class="relative bg-black/40 rounded-2xl overflow-hidden mystical-glow p-2">
+                    <video id="webcam" class="w-full h-auto rounded-xl" playsinline autoplay muted></video>
+                    <canvas id="overlay" class="absolute top-2 left-2 w-full h-full pointer-events-none" style="transform: scaleX(-1);"></canvas>
+                    
+                    <!-- 手势提示 -->
+                    <div class="absolute bottom-4 left-4 right-4 flex justify-between text-xs text-gray-300">
+                        <div class="bg-black/70 px-3 py-2 rounded-lg backdrop-blur-sm">
+                            <div class="text-2xl mb-1 text-center">👋</div>
+                            <div>左右挥手</div>
+                            <div class="text-yellow-400">洗牌</div>
+                        </div>
+                        <div class="bg-black/70 px-3 py-2 rounded-lg backdrop-blur-sm">
+                            <div class="text-2xl mb-1 text-center">✋</div>
+                            <div>手掌前推</div>
+                            <div class="text-green-400">抽牌</div>
+                        </div>
+                        <div class="bg-black/70 px-3 py-2 rounded-lg backdrop-blur-sm">
+                            <div class="text-2xl mb-1 text-center">✌️</div>
+                            <div>双指张开</div>
+                            <div class="text-blue-400">切换牌阵</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 牌阵选择器 -->
+                <div class="spread-selector rounded-xl p-4 space-y-2 max-h-[400px] overflow-y-auto">
+                    <h3 class="text-yellow-400 font-bold mb-3 flex items-center gap-2">
+                        <span>📋</span> 选择牌阵 <span class="text-xs text-gray-400 font-normal">(双指手势切换)</span>
+                    </h3>
+                    <div id="spreadList" class="space-y-2">
+                        <!-- 动态生成 -->
+                    </div>
+                </div>
+
+                <!-- 操作说明 -->
+                <div id="instruction" class="gesture-hint bg-black/40 backdrop-blur-md px-4 py-3 rounded-lg text-center text-sm border border-yellow-600/30">
+                    请允许摄像头权限，准备开始占卜
+                </div>
+            </div>
+
+            <!-- 右侧：塔罗牌桌 (8列) -->
+            <div class="xl:col-span-8 space-y-4">
+                
+                <!-- 牌桌区域 -->
+                <div class="bg-gradient-to-br from-purple-900/20 via-blue-900/20 to-indigo-900/20 rounded-2xl p-6 mystical-glow min-h-[500px] relative border border-white/5">
+                    
+                    <!-- 牌堆 -->
+                    <div class="absolute top-6 right-6 z-20">
+                        <div class="text-center mb-2 text-xs text-gray-400">牌堆</div>
+                        <div id="deck" class="relative w-24 h-36 cursor-pointer transition-all hover:scale-105">
+                            <div class="absolute inset-0 card-back rounded-lg shadow-2xl opacity-40 translate-x-3 translate-y-3"></div>
+                            <div class="absolute inset-0 card-back rounded-lg shadow-2xl opacity-60 translate-x-2 translate-y-2"></div>
+                            <div class="absolute inset-0 card-back rounded-lg shadow-2xl opacity-80 translate-x-1 translate-y-1"></div>
+                            <div class="absolute inset-0 card-back rounded-lg shadow-2xl flex items-center justify-center bg-gradient-to-br from-purple-900 to-indigo-900">
+                                <span class="text-3xl">🌙</span>
+                            </div>
+                            <div id="deckCount" class="absolute -bottom-6 left-0 right-0 text-center text-xs text-gray-400">78张</div>
+                        </div>
+                    </div>
+
+                    <!-- 牌阵展示区域 -->
+                    <div class="mb-4">
+                        <h2 id="spreadTitle" class="tarot-font text-2xl text-yellow-200 mb-2">单张牌占卜</h2>
+                        <p id="spreadDesc" class="text-sm text-gray-400 mb-6">适合快速获取当下指引，回答是否问题</p>
+                    </div>
+
+                    <!-- 动态牌阵容器 -->
+                    <div id="cardTable" class="flex flex-wrap justify-center items-center gap-4 min-h-[300px] p-4">
+                        <!-- 动态生成牌位 -->
+                    </div>
+
+                    <!-- 控制按钮 -->
+                    <div class="flex justify-center gap-4 mt-8">
+                        <button onclick="resetReading()" class="px-6 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm transition-colors hidden" id="resetBtn">
+                            重新占卜
+                        </button>
+                        <button onclick="autoDraw()" class="px-6 py-2 bg-purple-600 hover:bg-purple-500 rounded-lg text-sm transition-colors hidden" id="autoDrawBtn">
+                            自动补全
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 解读区域 -->
+                <div id="interpretation" class="bg-black/40 backdrop-blur-md rounded-xl p-6 hidden fade-in border border-yellow-600/20">
+                    <h3 class="tarot-font text-xl text-yellow-400 mb-4 flex items-center gap-2">
+                        <span>🔮</span> 牌意解读
+                    </h3>
+                    <div id="readingText" class="space-y-3 text-gray-300 leading-relaxed"></div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // 塔罗牌数据（78张完整版）
+        const tarotDeck = {
+            major: [
+                { name: "愚者", nameEn: "The Fool", meaning: "新的开始，冒险，纯真，自发性，无限潜能", element: "Air", keywords: ["开端", "自由", "冒险"] },
+                { name: "魔术师", nameEn: "The Magician", meaning: "创造力，意志力，显化能力，资源整合，专注", element: "Air", keywords: ["创造", "显化", "能力"] },
+                { name: "女祭司", nameEn: "The High Priestess", meaning: "直觉，神秘，潜意识，内在智慧，等待", element: "Water", keywords: ["直觉", "神秘", "智慧"] },
+                { name: "皇后", nameEn: "The Empress", meaning: "丰饶，母性，自然，感官享受，创造力", element: "Earth", keywords: ["丰饶", "创造", "滋养"] },
+                { name: "皇帝", nameEn: "The Emperor", meaning: "权威，结构，父权，控制，秩序，理性", element: "Fire", keywords: ["权威", "结构", "控制"] },
+                { name: "教皇", nameEn: "The Hierophant", meaning: "传统，信仰，教育，指导，社会规范", element: "Earth", keywords: ["传统", "信仰", "指导"] },
+                { name: "恋人", nameEn: "The Lovers", meaning: "爱情，选择，和谐，结合，价值观，关系", element: "Air", keywords: ["爱情", "选择", "结合"] },
+                { name: "战车", nameEn: "The Chariot", meaning: "意志力，胜利，决心，控制，前进，竞争", element: "Water", keywords: ["意志", "胜利", "控制"] },
+                { name: "力量", nameEn: "Strength", meaning: "勇气，耐心，内在力量，同情心，以柔克刚", element: "Fire", keywords: ["勇气", "耐心", "力量"] },
+                { name: "隐士", nameEn: "The Hermit", meaning: "内省，孤独，寻求真理，指引，灵魂探索", element: "Earth", keywords: ["内省", "真理", "指引"] },
+                { name: "命运之轮", nameEn: "Wheel of Fortune", meaning: "命运，周期，运气，转折点，业力，变化", element: "Fire", keywords: ["命运", "周期", "转变"] },
+                { name: "正义", nameEn: "Justice", meaning: "公正，真理，因果，法律，责任，平衡", element: "Air", keywords: ["公正", "真理", "平衡"] },
+                { name: "倒吊人", nameEn: "The Hanged Man", meaning: "牺牲，等待，新视角，放手，暂停，奉献", element: "Water", keywords: ["牺牲", "等待", "视角"] },
+                { name: "死神", nameEn: "Death", meaning: "转变，结束，新生，释放，必要改变，转化", element: "Water", keywords: ["转变", "结束", "新生"] },
+                { name: "节制", nameEn: "Temperance", meaning: "平衡，调和，耐心，中庸，炼金术，流动", element: "Fire", keywords: ["平衡", "调和", "耐心"] },
+                { name: "恶魔", nameEn: "The Devil", meaning: "束缚，物质主义，诱惑，阴影，成瘾，限制", element: "Earth", keywords: ["束缚", "物质", "阴影"] },
+                { name: "塔", nameEn: "The Tower", meaning: "突变，觉醒，破坏，启示，崩塌，解放", element: "Fire", keywords: ["突变", "觉醒", "破坏"] },
+                { name: "星星", nameEn: "The Star", meaning: "希望，灵感，宁静，指引，疗愈，信心", element: "Air", keywords: ["希望", "灵感", "疗愈"] },
+                { name: "月亮", nameEn: "The Moon", meaning: "幻觉，恐惧，潜意识，直觉，未知，想象", element: "Water", keywords: ["幻觉", "恐惧", "直觉"] },
+                { name: "太阳", nameEn: "The Sun", meaning: "成功，喜悦，活力，意识，清晰，乐观", element: "Fire", keywords: ["成功", "喜悦", "活力"] },
+                { name: "审判", nameEn: "Judgement", meaning: "重生，召唤，宽恕，觉醒，评价，内在呼唤", element: "Fire", keywords: ["重生", "宽恕", "觉醒"] },
+                { name: "世界", nameEn: "The World", meaning: "完成，成就，整合，旅行，圆满，整体性", element: "Earth", keywords: ["完成", "成就", "圆满"] }
+            ],
+            minor: {
+                wands: ["权杖王牌", "权杖二", "权杖三", "权杖四", "权杖五", "权杖六", "权杖七", "权杖八", "权杖九", "权杖十", "权杖侍从", "权杖骑士", "权杖皇后", "权杖国王"],
+                cups: ["圣杯王牌", "圣杯二", "圣杯三", "圣杯四", "圣杯五", "圣杯六", "圣杯七", "圣杯八", "圣杯九", "圣杯十", "圣杯侍从", "圣杯骑士", "圣杯皇后", "圣杯国王"],
+                swords: ["宝剑王牌", "宝剑二", "宝剑三", "宝剑四", "宝剑五", "宝剑六", "宝剑七", "宝剑八", "宝剑九", "宝剑十", "宝剑侍从", "宝剑骑士", "宝剑皇后", "宝剑国王"],
+                pentacles: ["星币王牌", "星币二", "星币三", "星币四", "星币五", "星币六", "星币七", "星币八", "星币九", "星币十", "星币侍从", "星币骑士", "星币皇后", "星币国王"]
+            }
+        };
+
+        // 十大牌阵定义
+        const spreads = [
+            {
+                id: 'single',
+                name: '单张牌占卜',
+                nameEn: 'Single Card',
+                cardCount: 1,
+                description: '适合快速获取当下指引，回答是否问题，每日运势',
+                positions: [
+                    { name: '指引', meaning: '当前状况的核心指引' }
+                ],
+                layout: 'single',
+                interpretation: '这张牌代表你当前问题的核心答案。'
+            },
+            {
+                id: 'three',
+                name: '时间之流',
+                nameEn: 'Three Cards',
+                cardCount: 3,
+                description: '经典三张牌阵，揭示过去、现在、未来的时间线',
+                positions: [
+                    { name: '过去', meaning: '影响当前状况的过去因素' },
+                    { name: '现在', meaning: '当前状况和挑战' },
+                    { name: '未来', meaning: '可能的未来发展方向' }
+                ],
+                layout: 'row',
+                interpretation: '三张牌展示了时间线上的能量流动。'
+            },
+            {
+                id: 'celtic',
+                name: '凯尔特十字',
+                nameEn: 'Celtic Cross',
+                cardCount: 10,
+                description: '最全面的牌阵，深入分析问题的各个层面',
+                positions: [
+                    { name: '现状', meaning: '当前状况的核心' },
+                    { name: '阻碍', meaning: '横亘在面前的障碍（横置）' },
+                    { name: '基础', meaning: '问题的根基和潜意识' },
+                    { name: '过去', meaning: '影响现在的过去事件' },
+                    { name: '未来', meaning: '近期可能的发展' },
+                    { name: '自我', meaning: '问卜者的态度和想法' },
+                    { name: '环境', meaning: '外部环境和他人影响' },
+                    { name: '希望', meaning: '希望和恐惧' },
+                    { name: '结果', meaning: '如果继续当前路径的结果' }
+                ],
+                layout: 'celtic',
+                interpretation: '凯尔特十字提供了问题的全景图，从多个维度揭示真相。'
+            },
+            {
+                id: 'horseshoe',
+                name: '马蹄铁牌阵',
+                nameEn: 'Horseshoe Spread',
+                cardCount: 7,
+                description: 'U型布局，适合复杂决策和人生方向选择',
+                positions: [
+                    { name: '过去', meaning: '过去的状况和影响' },
+                    { name: '现在', meaning: '当前面临的挑战' },
+                    { name: '未来', meaning: '即将到来的影响' },
+                    { name: '建议', meaning: '应采取的最佳行动' },
+                    { name: '环境', meaning: '周围人的态度和影响' },
+                    { name: '障碍', meaning: '需要克服的障碍' },
+                    { name: '结果', meaning: '最终可能的结果' }
+                ],
+                layout: 'horseshoe',
+                interpretation: '马蹄铁牌阵像一座桥梁，连接过去与未来，指引决策方向。'
+            },
+            {
+                id: 'relationship',
+                name: '关系牌阵',
+                nameEn: 'Relationship Spread',
+                cardCount: 5,
+                description: '专门分析人际关系、爱情、合作关系的牌阵',
+                positions: [
+                    { name: '你', meaning: '你在关系中的状态和期待' },
+                    { name: '对方', meaning: '对方的状态和想法' },
+                    { name: '关系', meaning: '关系的现状和动态' },
+                    { name: '挑战', meaning: '关系面临的挑战' },
+                    { name: '潜力', meaning: '关系的发展潜力' }
+                ],
+                layout: 'cross',
+                interpretation: '这个牌阵揭示了关系中双方的能量互动。'
+            },
+            {
+                id: 'career',
+                name: '事业金字塔',
+                nameEn: 'Career Pyramid',
+                cardCount: 6,
+                description: '金字塔结构，分析事业发展的各个层面',
+                positions: [
+                    { name: '现状', meaning: '当前职业状况' },
+                    { name: '优势', meaning: '你的核心优势和技能' },
+                    { name: '挑战', meaning: '面临的职业挑战' },
+                    { name: '建议', meaning: '应采取的行动建议' },
+                    { name: '发展', meaning: '短期发展机会' },
+                    { name: '成就', meaning: '长期职业成就' }
+                ],
+                layout: 'pyramid',
+                interpretation: '事业金字塔从基础到顶端，构建你的职业发展蓝图。'
+            },
+            {
+                id: 'decision',
+                name: '二选一牌阵',
+                nameEn: 'Decision Spread',
+                cardCount: 6,
+                description: '帮助在A/B两个选项间做出明智选择',
+                positions: [
+                    { name: '现状', meaning: '当前状况和问题核心' },
+                    { name: '选择A', meaning: '选择A的短期结果' },
+                    { name: '选择A+', meaning: '选择A的长期发展' },
+                    { name: '选择B', meaning: '选择B的短期结果' },
+                    { name: '选择B+', meaning: '选择B的长期发展' },
+                    { name: '建议', meaning: '综合考虑后的建议' }
+                ],
+                layout: 'split',
+                interpretation: '这个牌阵帮助你比较两个选择的不同结果。'
+            },
+            {
+                id: 'self',
+                name: '自我探索',
+                nameEn: 'Self-Discovery',
+                cardCount: 4,
+                description: '四元素牌阵，探索内在自我的不同面向',
+                positions: [
+                    { name: '火', meaning: '你的热情和意志（火元素）' },
+                    { name: '水', meaning: '你的情感和直觉（水元素）' },
+                    { name: '风', meaning: '你的思想和沟通（风元素）' },
+                    { name: '土', meaning: '你的物质和实际（土元素）' }
+                ],
+                layout: 'diamond',
+                interpretation: '四元素代表你内在世界的完整图景。'
+            },
+            {
+                id: 'year',
+                name: '年度运势',
+                nameEn: 'Year Ahead',
+                cardCount: 12,
+                description: '十二张牌代表未来十二个月的运势指引',
+                positions: Array.from({length: 12}, (_, i) => ({
+                    name: `${i + 1}月`,
+                    meaning: `${i + 1}个月后的主题和能量`
+                })),
+                layout: 'circle',
+                interpretation: '年度运势展示了未来一年的能量周期和重要主题。'
+            },
+            {
+                id: 'chakra',
+                name: '七脉轮牌阵',
+                nameEn: 'Chakra Spread',
+                cardCount: 7,
+                description: '对应人体七个能量中心，诊断身心灵状态',
+                positions: [
+                    { name: '顶轮', meaning: '灵性连接和更高意识' },
+                    { name: '眉心轮', meaning: '直觉和洞察力' },
+                    { name: '喉轮', meaning: '沟通和表达' },
+                    { name: '心轮', meaning: '爱和关系' },
+                    { name: '太阳轮', meaning: '意志力和自信' },
+                    { name: '脐轮', meaning: '情感和创造力' },
+                    { name: '海底轮', meaning: '安全感和根基' }
+                ],
+                layout: 'column',
+                interpretation: '七脉轮牌阵揭示了你能量系统的平衡状态。'
+            }
+        ];
+
+        // 全局变量
+        let model = null;
+        let video = null;
+        let canvas = null;
+        let ctx = null;
+        let isShuffling = false;
+        let currentSpread = spreads[0];
+        let drawnCards = [];
+        let deck = [];
+        let handHistory = [];
+        let lastGestureTime = 0;
+        let gestureCooldown = 2000;
+        let isTwoFingerGesture = false;
+
+        // 初始化
+        async function init() {
+            video = document.getElementById('webcam');
+            canvas = document.getElementById('overlay');
+            ctx = canvas.getContext('2d');
+            
+            canvas.width = 640;
+            canvas.height = 480;
+            
+            initSpreadSelector();
+            initDeck();
+            renderSpread();
+            
+            try {
+                updateStatus('modelStatus', '正在加载 HandPose 模型...', 'yellow');
+                model = await handpose.load();
+                updateStatus('modelStatus', 'AI 模型就绪', 'green');
+                
+                await setupCamera();
+                detectHands();
+            } catch (error) {
+                updateStatus('modelStatus', '模型加载失败', 'red');
+                console.error(error);
+            }
+        }
+
+        function initDeck() {
+            // 构建78张牌
+            deck = [...tarotDeck.major];
+            // 简化：使用大阿卡纳作为主要牌组
+            document.getElementById('deckCount').textContent = `${deck.length}张`;
+        }
+
+        function initSpreadSelector() {
+            const container = document.getElementById('spreadList');
+            spreads.forEach((spread, index) => {
+                const btn = document.createElement('button');
+                btn.className = `spread-btn w-full text-left px-4 py-3 rounded-lg flex items-center justify-between ${index === 0 ? 'active' : ''}`;
+                btn.innerHTML = `
+                    <div>
+                        <div class="font-bold text-sm ${index === 0 ? 'text-yellow-400' : 'text-gray-300'}">${spread.name}</div>
+                        <div class="text-xs text-gray-500">${spread.cardCount}张牌 · ${spread.description.substring(0, 15)}...</div>
+                    </div>
+                    <div class="text-lg">${getSpreadIcon(spread.id)}</div>
+                `;
+                btn.onclick = () => selectSpread(index);
+                container.appendChild(btn);
+            });
+        }
+
+        function getSpreadIcon(id) {
+            const icons = {
+                single: '☝️', three: '3️⃣', celtic: '✡️', horseshoe: 'U',
+                relationship: '💕', career: '💼', decision: '⚖️',
+                self: '🔷', year: '📅', chakra: '☸️'
+            };
+            return icons[id] || '🔮';
+        }
+
+        function selectSpread(index) {
+            if (drawnCards.length > 0 && !confirm('切换牌阵将重置当前占卜，是否继续？')) return;
+            
+            currentSpread = spreads[index];
+            drawnCards = [];
+            
+            // 更新UI
+            document.querySelectorAll('.spread-btn').forEach((btn, i) => {
+                btn.classList.toggle('active', i === index);
+                btn.querySelector('.font-bold').classList.toggle('text-yellow-400', i === index);
+                btn.querySelector('.font-bold').classList.toggle('text-gray-300', i !== index);
+            });
+            
+            document.getElementById('currentSpread').textContent = `当前牌阵：${currentSpread.name}`;
+            document.getElementById('spreadTitle').textContent = currentSpread.name;
+            document.getElementById('spreadDesc').textContent = currentSpread.description;
+            
+            renderSpread();
+            resetUI();
+            
+            updateInstruction(`已切换至${currentSpread.name}，请洗牌后开始`, 'text-yellow-300');
+        }
+
+        function renderSpread() {
+            const table = document.getElementById('cardTable');
+            table.innerHTML = '';
+            table.className = 'w-full';
+            
+            const layout = currentSpread.layout;
+            
+            if (layout === 'single') {
+                table.className += ' flex justify-center items-center min-h-[300px]';
+                table.appendChild(createCardSlot(0));
+            } 
+            else if (layout === 'row') {
+                table.className += ' flex justify-center items-center gap-6 min-h-[300px] flex-wrap';
+                currentSpread.positions.forEach((_, i) => table.appendChild(createCardSlot(i)));
+            }
+            else if (layout === 'celtic') {
+                table.className += ' celtic-cross-layout mx-auto';
+                currentSpread.positions.forEach((_, i) => {
+                    const slot = createCardSlot(i);
+                    slot.classList.add(`celtic-pos-${i+1}`);
+                    if (i === 1) slot.style.zIndex = '10';
+                    table.appendChild(slot);
+                });
+            }
+            else if (layout === 'horseshoe') {
+                table.className += ' horseshoe-layout';
+                currentSpread.positions.forEach((_, i) => {
+                    const wrapper = document.createElement('div');
+                    wrapper.className = 'card-wrapper transition-transform';
+                    wrapper.appendChild(createCardSlot(i));
+                    table.appendChild(wrapper);
+                });
+            }
+            else if (layout === 'cross') {
+                table.className += ' grid grid-cols-3 gap-4 max-w-lg mx-auto';
+                // 中心上方：关系
+                const relSlot = createCardSlot(2);
+                relSlot.style.gridColumn = '2';
+                table.appendChild(relSlot);
+                // 左右：你和对方
+                table.appendChild(createCardSlot(0));
+                table.appendChild(createCardSlot(1));
+                // 下方：挑战和潜力
+                const botRow = document.createElement('div');
+                botRow.className = 'col-span-3 flex justify-center gap-4';
+                botRow.appendChild(createCardSlot(3));
+                botRow.appendChild(createCardSlot(4));
+                table.appendChild(botRow);
+            }
+            else if (layout === 'pyramid') {
+                table.className += ' pyramid-layout';
+                const rows = [1, 2, 3];
+                let cardIdx = 0;
+                rows.forEach((count, rowIdx) => {
+                    const row = document.createElement('div');
+                    row.className = 'pyramid-row';
+                    for (let i = 0; i < count && cardIdx < currentSpread.cardCount; i++) {
+                        row.appendChild(createCardSlot(cardIdx++));
+                    }
+                    table.appendChild(row);
+                });
+            }
+            else if (layout === 'split') {
+                table.className += ' grid grid-cols-2 gap-4 max-w-2xl mx-auto';
+                // 左侧现状
+                const left = document.createElement('div');
+                left.className = 'col-span-2 flex justify-center mb-4';
+                left.appendChild(createCardSlot(0));
+                table.appendChild(left);
+                // A选择和B选择
+                currentSpread.positions.slice(1).forEach((_, i) => {
+                    table.appendChild(createCardSlot(i + 1));
+                });
+            }
+            else if (layout === 'diamond') {
+                table.className += ' grid grid-cols-3 gap-4 max-w-lg mx-auto';
+                // 上方：火
+                const top = document.createElement('div');
+                top.className = 'col-span-3 flex justify-center';
+                top.appendChild(createCardSlot(0));
+                table.appendChild(top);
+                // 左右：风和土
+                const mid = document.createElement('div');
+                mid.className = 'col-span-3 flex justify-between px-8';
+                mid.appendChild(createCardSlot(3)); // 土
+                mid.appendChild(createCardSlot(2)); // 风
+                table.appendChild(mid);
+                // 下方：水
+                const bot = document.createElement('div');
+                bot.className = 'col-span-3 flex justify-center';
+                bot.appendChild(createCardSlot(1));
+                table.appendChild(bot);
+            }
+            else if (layout === 'circle') {
+                table.className += ' grid grid-cols-4 gap-3 max-w-3xl mx-auto';
+                currentSpread.positions.forEach((_, i) => table.appendChild(createCardSlot(i)));
+            }
+            else if (layout === 'column') {
+                table.className += ' flex flex-col items-center gap-3';
+                currentSpread.positions.forEach((_, i) => table.appendChild(createCardSlot(i)));
+            }
+        }
+
+        function createCardSlot(index) {
+            const pos = currentSpread.positions[index];
+            const slot = document.createElement('div');
+            slot.id = `slot-${index}`;
+            slot.className = 'card-slot w-24 h-36 rounded-lg border-2 border-dashed border-yellow-600/30 bg-black/20 flex flex-col items-center justify-center relative cursor-pointer hover:border-yellow-600/60 transition-all';
+            slot.innerHTML = `
+                <div class="text-center pointer-events-none">
+                    <div class="text-2xl text-yellow-600/40 mb-1">${index + 1}</div>
+                    <div class="text-[10px] text-yellow-600/60 px-1 text-center leading-tight">${pos.name}</div>
+                </div>
+                <div class="position-label absolute -bottom-8 left-0 right-0 text-center text-[10px] text-gray-400 py-1 rounded opacity-0 transition-opacity">
+                    ${pos.meaning}
+                </div>
+            `;
+            slot.onmouseenter = () => slot.querySelector('.position-label').style.opacity = '1';
+            slot.onmouseleave = () => slot.querySelector('.position-label').style.opacity = '0';
+            return slot;
+        }
+
+        async function setupCamera() {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { width: 640, height: 480, facingMode: 'user' },
+                audio: false
+            });
+            video.srcObject = stream;
+            return new Promise((resolve) => {
+                video.onloadedmetadata = () => resolve(video);
+            });
+        }
+
+        async function detectHands() {
+            if (!model || video.readyState !== 4) {
+                requestAnimationFrame(detectHands);
+                return;
+            }
+
+            const predictions = await model.estimateHands(video);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            if (predictions.length > 0) {
+                const hand = predictions[0];
+                const landmarks = hand.landmarks;
+                
+                drawHand(landmarks);
+                
+                const gesture = recognizeGesture(landmarks);
+                handleGesture(gesture);
+                
+                updateDebugInfo(gesture);
+            } else {
+                document.getElementById('gestureStatus').classList.add('hidden');
+                isTwoFingerGesture = false;
+            }
+
+            requestAnimationFrame(detectHands);
+        }
+
+        function drawHand(landmarks) {
+            ctx.strokeStyle = '#00ff88';
+            ctx.lineWidth = 2;
+            ctx.fillStyle = '#00ff88';
+            
+            landmarks.forEach((point, index) => {
+                ctx.beginPath();
+                ctx.arc(point[0], point[1], 3, 0, 2 * Math.PI);
+                ctx.fill();
+            });
+            
+            const fingers = [
+                [0, 1, 2, 3, 4],
+                [0, 5, 6, 7, 8],
+                [0, 9, 10, 11, 12],
+                [0, 13, 14, 15, 16],
+                [0, 17, 18, 19, 20]
+            ];
+            
+            ctx.strokeStyle = 'rgba(0, 255, 136, 0.4)';
+            fingers.forEach(finger => {
+                ctx.beginPath();
+                ctx.moveTo(landmarks[finger[0]][0], landmarks[finger[0]][1]);
+                for (let i = 1; i < finger.length; i++) {
+                    ctx.lineTo(landmarks[finger[i]][0], landmarks[finger[i]][1]);
+                }
+                ctx.stroke();
+            });
+        }
+
+        function recognizeGesture(landmarks) {
+            const now = Date.now();
+            const palm = landmarks[9];
+            
+            // 记录历史
+            handHistory.push({ x: palm[0], y: palm[1], time: now });
+            if (handHistory.length > 15) handHistory.shift();
+            
+            // 检测双指手势（切换牌阵）
+            const indexTip = landmarks[8];
+            const middleTip = landmarks[12];
+            const wrist = landmarks[0];
+            const indexPip = landmarks[6];
+            const middlePip = landmarks[10];
+            
+            // 检查食指和中指是否伸展，其他手指弯曲
+            const indexExtended = indexTip[1] < indexPip[1];
+            const middleExtended = middleTip[1] < middlePip[1];
+            const ringCurled = landmarks[16][1] > landmarks[14][1];
+            const pinkyCurled = landmarks[20][1] > landmarks[18][1];
+            
+            if (indexExtended && middleExtended && ringCurled && pinkyCurled) {
+                if (!isTwoFingerGesture && now - lastGestureTime > 3000) {
+                    isTwoFingerGesture = true;
+                    return 'switch';
+                }
+            } else {
+                isTwoFingerGesture = false;
+            }
+            
+            // 检测洗牌（水平移动）
+            let horizontalMove = 0;
+            if (handHistory.length >= 8) {
+                const recent = handHistory.slice(-8);
+                const xDiff = recent[recent.length - 1].x - recent[0].x;
+                horizontalMove = Math.abs(xDiff);
+            }
+            
+            if (horizontalMove > 100 && !isShuffling && now - lastGestureTime > gestureCooldown) {
+                return 'shuffle';
+            }
+            
+            // 检测抽牌（手掌张开前推）
+            const fingersExtended = [8, 12, 16, 20].filter(tip => {
+                return landmarks[tip][1] < landmarks[tip - 2][1]; // 指尖比关节高
+            }).length;
+            
+            if (fingersExtended >= 3 && !isShuffling && now - lastGestureTime > gestureCooldown * 0.8) {
+                // 检测是否有向前推的动作（z轴变化或y轴上移）
+                const yTrend = handHistory.length > 5 ? handHistory[handHistory.length - 1].y - handHistory[0].y : 0;
+                if (yTrend < -30) return 'draw';
+            }
+            
+            return 'none';
+        }
+
+        function handleGesture(gesture) {
+            const now = Date.now();
+            
+            if (gesture === 'switch') {
+                lastGestureTime = now;
+                const currentIndex = spreads.indexOf(currentSpread);
+                const nextIndex = (currentIndex + 1) % spreads.length;
+                selectSpread(nextIndex);
+                updateInstruction(`已切换至${spreads[nextIndex].name}`, 'text-blue-300');
+                createParticles();
+            }
+            else if (gesture === 'shuffle') {
+                lastGestureTime = now;
+                performShuffle();
+            }
+            else if (gesture === 'draw') {
+                lastGestureTime = now;
+                performDraw();
+            }
+            
+            const statusEl = document.getElementById('gestureStatus');
+            statusEl.classList.remove('hidden');
+            const gestureText = {
+                'switch': '✌️ 切换牌阵',
+                'shuffle': '👋 洗牌中',
+                'draw': '✋ 抽牌',
+                'none': '等待手势...'
+            };
+            const gestureColor = {
+                'switch': 'text-blue-400',
+                'shuffle': 'text-yellow-400',
+                'draw': 'text-green-400',
+                'none': 'text-gray-400'
+            };
+            statusEl.innerHTML = `<span class="${gestureColor[gesture] || ''}">${gestureText[gesture]}</span>`;
+        }
+
+        function performShuffle() {
+            if (isShuffling) return;
+            
+            isShuffling = true;
+            updateInstruction('正在洗牌...保持挥手', 'text-yellow-300');
+            
+            const deckEl = document.getElementById('deck');
+            deckEl.classList.add('shuffling');
+            
+            // 随机打乱
+            deck = [...tarotDeck.major].sort(() => Math.random() - 0.5);
+            
+            setTimeout(() => {
+                deckEl.classList.remove('shuffling');
+                isShuffling = false;
+                createParticles();
+                updateInstruction(`洗牌完成！请手掌前推抽取${currentSpread.cardCount}张牌`, 'text-green-300');
+            }, 2500);
+        }
+
+        function performDraw() {
+            if (drawnCards.length >= currentSpread.cardCount || isShuffling) {
+                if (drawnCards.length >= currentSpread.cardCount) {
+                    updateInstruction('牌阵已完成，查看下方解读', 'text-purple-300');
+                }
+                return;
+            }
+            
+            if (deck.length === 0) deck = [...tarotDeck.major].sort(() => Math.random() - 0.5);
+            
+            const card = deck.pop();
+            const position = drawnCards.length;
+            drawnCards.push({ ...card, position });
+            
+            revealCard(card, position);
+            
+            const remaining = currentSpread.cardCount - drawnCards.length;
+            updateInstruction(`已抽取第${position + 1}张，还剩${remaining}张`, 'text-blue-300');
+            
+            if (drawnCards.length === currentSpread.cardCount) {
+                setTimeout(() => {
+                    showInterpretation();
+                    document.getElementById('resetBtn').classList.remove('hidden');
+                }, 800);
+            }
+        }
+
+        function revealCard(card, position) {
+            const slot = document.getElementById(`slot-${position}`);
+            const pos = currentSpread.positions[position];
+            
+            slot.classList.add('occupied');
+            slot.innerHTML = '';
+            slot.style.border = '2px solid #e9c46a';
+            slot.style.background = 'linear-gradient(135deg, rgba(233,196,106,0.1), rgba(233,196,106,0.05))';
+            
+            const cardEl = document.createElement('div');
+            cardEl.className = 'w-full h-full rounded-lg card-face flex flex-col items-center justify-center p-2 drawing relative overflow-hidden';
+            
+            // 随机正逆位
+            const isReversed = Math.random() > 0.7; // 30%概率逆位
+            const rotateDeg = isReversed ? 180 : 0;
+            
+            cardEl.innerHTML = `
+                <div class="absolute inset-0 bg-gradient-to-br from-amber-50 to-orange-50 opacity-50"></div>
+                <div class="relative z-10 text-center transform ${isReversed ? 'rotate-180' : ''}" style="transition: transform 0.5s;">
+                    <div class="text-3xl mb-1 filter drop-shadow-lg">${getCardSymbol(card.name)}</div>
+                    <div class="font-bold text-gray-800 text-xs leading-tight mb-0.5">${card.name}</div>
+                    <div class="text-[9px] text-gray-500 tarot-font uppercase tracking-wider">${card.nameEn}</div>
+                    ${isReversed ? '<div class="text-[8px] text-red-500 mt-1 font-bold">逆位</div>' : '<div class="text-[8px] text-blue-600 mt-1">正位</div>'}
+                </div>
+                <div class="absolute top-1 left-1 text-[8px] text-gray-400 font-bold">${position + 1}</div>
+                <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/10 to-transparent h-8"></div>
+            `;
+            
+            slot.appendChild(cardEl);
+            
+            // 光效
+            setTimeout(() => {
+                cardEl.style.boxShadow = '0 0 20px rgba(233, 196, 106, 0.4), inset 0 0 20px rgba(255,255,255,0.2)';
+            }, 600);
+        }
+
+        function getCardSymbol(name) {
+            const symbols = {
+                '愚者': '🃏', '魔术师': '🎩', '女祭司': '🌙', '皇后': '👑', '皇帝': '⚔️',
+                '教皇': '📿', '恋人': '💕', '战车': '🏛️', '力量': '🦁', '隐士': '🏔️',
+                '命运之轮': '☸️', '正义': '⚖️', '倒吊人': '🙃', '死神': '💀', '节制': '🏺',
+                '恶魔': '⛓️', '塔': '🗼', '星星': '⭐', '月亮': '🌕', '太阳': '☀️',
+                '审判': '🎺', '世界': '🌍'
+            };
+            return symbols[name] || '🔮';
+        }
+
+        function showInterpretation() {
+            const interp = document.getElementById('interpretation');
+            const text = document.getElementById('readingText');
+            
+            let html = `<div class="mb-4 text-yellow-200/80 text-sm italic">${currentSpread.interpretation}</div>`;
+            
+            // 分析牌面组合
+            const elements = {};
+            const upright = [];
+            const reversed = [];
+            
+            drawnCards.forEach((card, i) => {
+                const pos = currentSpread.positions[i];
+                const isReversed = card.position % 3 === 2; // 简化判断
+                
+                html += `
+                    <div class="flex gap-3 items-start p-3 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">
+                        <div class="flex-shrink-0 w-8 h-12 rounded bg-gradient-to-br from-yellow-100 to-yellow-200 flex items-center justify-center text-lg shadow-lg">
+                            ${getCardSymbol(card.name)}
+                        </div>
+                        <div class="flex-1">
+                            <div class="flex items-center gap-2 mb-1">
+                                <span class="font-bold text-yellow-400 text-sm">${pos.name}</span>
+                                <span class="text-xs text-gray-500">· ${card.name}</span>
+                                ${isReversed ? '<span class="text-[10px] bg-red-900/50 text-red-300 px-1.5 rounded">逆位</span>' : '<span class="text-[10px] bg-blue-900/50 text-blue-300 px-1.5 rounded">正位</span>'}
+                            </div>
+                            <p class="text-xs text-gray-400 leading-relaxed">${pos.meaning}：${isReversed ? '需要警惕' : ''}${card.meaning}</p>
+                            <div class="flex gap-1 mt-1">
+                                ${card.keywords.map(k => `<span class="text-[10px] bg-purple-900/30 text-purple-300 px-1.5 rounded">${k}</span>`).join('')}
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // 统计
+                elements[card.element] = (elements[card.element] || 0) + 1;
+                if (isReversed) reversed.push(card.name);
+                else upright.push(card.name);
+            });
+            
+            // 添加综合分析
+            const dominantElement = Object.entries(elements).sort((a,b) => b[1]-a[1])[0];
+            html += `
+                <div class="mt-4 p-4 bg-gradient-to-r from-purple-900/40 to-blue-900/40 rounded-lg border border-purple-500/30">
+                    <h4 class="font-bold text-purple-300 mb-2 text-sm">🔮 综合能量分析</h4>
+                    <p class="text-xs text-gray-300 leading-relaxed mb-2">
+                        主导元素：<span class="text-yellow-400">${dominantElement ? dominantElement[0] : '平衡'}</span> 
+                        (${dominantElement ? Math.round(dominantElement[1]/drawnCards.length*100) : 0}%)
+                    </p>
+                    <p class="text-xs text-gray-400 leading-relaxed">
+                        ${reversed.length > 0 ? `逆位提示：${reversed.join('、')}显示需要内在调整或延迟。` : '全是正位，能量流通顺畅。'}
+                        建议关注${dominantElement ? dominantElement[0] : '各'}元素能量的${dominantElement && dominantElement[1] > drawnCards.length/2 ? '过度集中或缺乏' : '平衡'}。
+                    </p>
+                </div>
+            `;
+            
+            text.innerHTML = html;
+            interp.classList.remove('hidden');
+            interp.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function resetReading() {
+            drawnCards = [];
+            deck = [...tarotDeck.major].sort(() => Math.random() - 0.5);
+            isShuffling = false;
+            
+            renderSpread();
+            
+            document.getElementById('interpretation').classList.add('hidden');
+            document.getElementById('resetBtn').classList.add('hidden');
+            
+            updateInstruction('请洗牌开始新的占卜', 'text-gray-300');
+        }
+
+        function resetUI() {
+            document.getElementById('interpretation').classList.add('hidden');
+            document.getElementById('resetBtn').classList.add('hidden');
+        }
+
+        function autoDraw() {
+            // 自动补全剩余牌位（调试用）
+            while (drawnCards.length < currentSpread.cardCount) {
+                performDraw();
+            }
+        }
+
+        function createParticles() {
+            const colors = ['#e9c46a', '#f4a261', '#e76f51', '#2a9d8f', '#9b5de5'];
+            for (let i = 0; i < 30; i++) {
+                const p = document.createElement('div');
+                p.style.cssText = `
+                    position: fixed;
+                    width: ${4 + Math.random() * 6}px;
+                    height: ${4 + Math.random() * 6}px;
+                    background: ${colors[Math.floor(Math.random() * colors.length)]};
+                    border-radius: 50%;
+                    pointer-events: none;
+                    z-index: 100;
+                    left: 50%;
+                    top: 50%;
+                    box-shadow: 0 0 10px currentColor;
+                `;
+                document.body.appendChild(p);
+                
+                const angle = (Math.PI * 2 * i) / 30 + Math.random();
+                const velocity = 100 + Math.random() * 150;
+                
+                p.animate([
+                    { transform: 'translate(0,0) scale(1)', opacity: 1 },
+                    { transform: `translate(${Math.cos(angle)*velocity}px, ${Math.sin(angle)*velocity}px) scale(0)`, opacity: 0 }
+                ], {
+                    duration: 1200 + Math.random() * 800,
+                    easing: 'cubic-bezier(0, .9, .57, 1)'
+                }).onfinish = () => p.remove();
+            }
+        }
+
+        function updateStatus(id, text, color) {
+            const el = document.getElementById(id);
+            const colors = { yellow: 'bg-yellow-400', green: 'bg-green-400', red: 'bg-red-400', blue: 'bg-blue-400' };
+            el.innerHTML = `<span class="w-2 h-2 ${colors[color] || 'bg-gray-400'} rounded-full ${color === 'yellow' ? 'animate-pulse' : ''}"></span>${text}`;
+        }
+
+        function updateInstruction(text, colorClass) {
+            const el = document.getElementById('instruction');
+            el.className = `gesture-hint bg-black/40 backdrop-blur-md px-4 py-3 rounded-lg text-center text-sm border border-yellow-600/30 ${colorClass}`;
+            el.innerHTML = text;
+        }
+
+        function updateDebugInfo(gesture) {
+            // 简化调试
+        }
+
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>
